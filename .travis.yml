@@ -76,6 +76,7 @@ before_deploy:
 #- echo ".travis/sandstorm.sh"
 deploy:
   provider: releases
+  prerelease: true
   api_key: "$GITHUB_TOKEN"
   file: /tmp/build/Rocket.Chat.tar.gz
   skip_cleanup: true
