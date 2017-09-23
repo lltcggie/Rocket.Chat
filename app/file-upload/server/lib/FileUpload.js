@@ -353,7 +353,7 @@ export const FileUpload = {
 		// This file type can be pretty much anything, so it's better if we don't mess with the file extension
 		if (file.type !== 'application/octet-stream') {
 			const ext = mime.extension(file.type);
-			if (ext && new RegExp(`\\.${ ext }$`, 'i').test(file.name) === false) {
+			if (ext && new RegExp(`\\.${ ext }$`, 'i').test(file.name) === false && ext !== 'bin') {
 				file.name = `${ file.name }.${ ext }`;
 			}
 		}
