@@ -1,6 +1,6 @@
 FROM node:12.18.4-buster-slim
 
-LABEL maintainer="buildmaster@rocket.chat"
+LABEL maintainer="lltcggie@gmail.com"
 
 # dependencies
 RUN groupadd -g 65533 -r rocketchat \
