@@ -247,7 +247,7 @@ export const FileUpload = {
 	},
 
 	uploadsOnValidate(file) {
-		if (!/^image\/((x-windows-)?bmp|p?jpeg|png)$/.test(file.type)) {
+		if (!/^image\/(p?jpeg)$/.test(file.type)) {
 			return;
 		}
 
