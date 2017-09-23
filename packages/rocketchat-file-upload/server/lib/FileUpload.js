@@ -241,7 +241,7 @@ export const FileUpload = Object.assign(_FileUpload, {
 		}
 
 		const ext = mime.extension(file.type);
-		if (ext && false === new RegExp(`\.${ ext }$`, 'i').test(file.name)) {
+		if (ext && false === new RegExp(`\.${ ext }$`, 'i').test(file.name) && ext !== 'bin') {
 			file.name = `${ file.name }.${ ext }`;
 		}
 
