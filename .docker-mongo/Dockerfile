@@ -3,7 +3,7 @@ FROM rocketchat/base:8
 ADD . /app
 ADD entrypoint.sh /app/bundle/
 
-MAINTAINER buildmaster@rocket.chat
+MAINTAINER lltcggie@gmail.com
 
 RUN set -x \
  && apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 2930ADAE8CAF5059EE73BB4B58712A2291FA4AD5 \
