@@ -2,7 +2,7 @@ FROM rocketchat/base:12.16.1
 
 ADD . /app
 
-LABEL maintainer="buildmaster@rocket.chat"
+LABEL maintainer="lltcggie@gmail.com"
 
 RUN set -x \
  && cd /app/bundle/programs/server \
