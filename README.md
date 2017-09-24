@@ -183,21 +183,15 @@ Host your docker container at [sloppy.io](http://sloppy.io). Get an account and 
 
 [![Rocket.Chat logo](https://d207aa93qlcgug.cloudfront.net/1.95.5.qa/img/nav/docker-logo-loggedout.png)](https://hub.docker.com/r/rocketchat/rocket.chat/)
 
-OR Use the automated build image of our [most recent release](https://hub.docker.com/r/rocketchat/rocket.chat/)
+OR Use the automated build image of our [most recent release](https://hub.docker.com/r/lltcggie/rocket.chat/)
 
 ```
-docker pull rocketchat/rocket.chat:latest
+docker pull lltcggie/rocket.chat:latest
 ```
 
 OR select a specific release ([details of releases available](https://github.com/RocketChat/Rocket.Chat/releases)):
 ```
-docker pull rocketchat/rocket.chat:vX.X.X
-```
-
-OR our [official docker registry image](https://hub.docker.com/_/rocket.chat/), containing recent stable release build approved by Docker:
-
-```
-docker pull rocket.chat
+docker pull lltcggie/rocket.chat:X.X.X
 ```
 
 ## Ansible
