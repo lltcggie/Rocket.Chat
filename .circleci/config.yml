@@ -208,7 +208,7 @@ jobs:
   deploy:
     <<: *defaults
     docker:
-      - image: circleci/node:8.9
+      - image: circleci/golang:1.8
 
     steps:
       - attach_workspace:
@@ -217,16 +217,11 @@ jobs:
       - checkout
 
       - run:
-          name: Install AWS cli
+          name: Install ghr
           command: |
             if [[ $CIRCLE_PULL_REQUESTS ]]; then exit 0; fi;
 
-            sudo apt-get -y -qq update
-            sudo apt-get -y -qq install python3.4-dev
-            curl -O https://bootstrap.pypa.io/get-pip.py
-            python3.4 get-pip.py --user
-            export PATH=~/.local/bin:$PATH
-            pip install awscli --upgrade --user
+            go get github.com/tcnksm/ghr
 
       - run:
           name: Publish assets
@@ -238,15 +233,24 @@ jobs:
 
             source .circleci/setartname.sh
             source .circleci/setdeploydir.sh
-            bash .circleci/setupsig.sh
+            #bash .circleci/setupsig.sh
             bash .circleci/namefiles.sh
             # echo ".circleci/sandstorm.sh"
 
-            aws s3 cp $ROCKET_DEPLOY_DIR/ s3://download.rocket.chat/build/ --recursive
+            #aws s3 cp $ROCKET_DEPLOY_DIR/ s3://download.rocket.chat/build/ --recursive
 
-            bash .circleci/update-releases.sh
+            if [[ $CIRCLE_TAG ]]; then
+              PRE_RELEASE=
+              if [[ "$CIRCLE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+-custom$ ]]; then
+                PRE_RELEASE=-prerelease
+              fi
+
+              ghr -t $GITHUB_TOKEN -u $CIRCLE_PROJECT_USERNAME -r $CIRCLE_PROJECT_REPONAME $PRE_RELEASE --replace $CIRCLE_TAG /tmp/build/Rocket.Chat.tar.gz;
+            fi
+
+            #bash .circleci/update-releases.sh
             bash .circleci/docker.sh
-            bash .circleci/snap.sh
+            #bash .circleci/snap.sh
             bash .circleci/redhat-registry.sh
 
 workflows:
@@ -255,27 +259,33 @@ workflows:
     jobs:
       - build:
           filters:
+            branches:
+              ignore: /.*/
             tags:
-              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-custom$/
       - test-with-oplog:
           requires:
             - build
           filters:
+            branches:
+              ignore: /.*/
             tags:
-              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-custom$/
       - test-without-oplog:
           requires:
             - build
           filters:
+            branches:
+              ignore: /.*/
             tags:
-              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-custom$/
       - deploy:
           requires:
             - test-with-oplog
             - test-without-oplog
           filters:
             branches:
-              only: develop
+              ignore: /.*/
             tags:
-              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-custom$/
 
