@@ -2,7 +2,7 @@
 set -euvo pipefail
 IFS=$'\n\t'
 
-CURL_URL="https://registry.hub.docker.com/u/rocketchat/rocket.chat/trigger/$DOCKER_TRIGGER_TOKEN/"
+CURL_URL="$DOCKER_PUSHURL"
 
 if [[ $CIRCLE_TAG ]]; then
   CURL_DATA='{"source_type":"Tag","source_name":"'"$CIRCLE_TAG"'"}';
