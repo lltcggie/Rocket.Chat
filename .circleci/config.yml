@@ -218,7 +218,7 @@ jobs:
   deploy:
     <<: *defaults
     docker:
-      - image: circleci/node:8.9
+      - image: circleci/golang:1.8
 
     steps:
       - attach_workspace:
@@ -227,16 +227,11 @@ jobs:
       - checkout
 
       - run:
-          name: Install AWS cli
+          name: Install ghr
           command: |
             if [[ $CIRCLE_PULL_REQUESTS ]]; then exit 0; fi;
 
-            sudo apt-get -y -qq update
-            sudo apt-get -y -qq install python3.4-dev
-            curl -O https://bootstrap.pypa.io/get-pip.py
-            python3.4 get-pip.py --user
-            export PATH=~/.local/bin:$PATH
-            pip install awscli --upgrade --user
+            go get github.com/tcnksm/ghr
 
       - run:
           name: Publish assets
@@ -248,15 +243,24 @@ jobs:
 
             source .circleci/setartname.sh
             source .circleci/setdeploydir.sh
-            bash .circleci/setupsig.sh
+            #bash .circleci/setupsig.sh
             bash .circleci/namefiles.sh
             # echo ".circleci/sandstorm.sh"
 
-            aws s3 cp $ROCKET_DEPLOY_DIR/ s3://download.rocket.chat/build/ --recursive
+            #aws s3 cp $ROCKET_DEPLOY_DIR/ s3://download.rocket.chat/build/ --recursive
 
-            bash .circleci/update-releases.sh
-            bash .circleci/snap.sh
-            bash .circleci/redhat-registry.sh
+            if [[ $CIRCLE_TAG ]]; then
+              PRE_RELEASE=
+              if [[ "$CIRCLE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+-custom$ ]]; then
+                PRE_RELEASE=-prerelease
+              fi
+
+              ghr -t $GITHUB_TOKEN -u $CIRCLE_PROJECT_USERNAME -r $CIRCLE_PROJECT_REPONAME $PRE_RELEASE --replace $CIRCLE_TAG /tmp/build/Rocket.Chat.tar.gz;
+            fi
+
+            #bash .circleci/update-releases.sh
+            #bash .circleci/snap.sh
+            #bash .circleci/redhat-registry.sh
 
   image-build:
     <<: *defaults
@@ -281,31 +285,36 @@ jobs:
 
             export CIRCLE_TAG=${CIRCLE_TAG:=}
             if [[ $CIRCLE_TAG ]]; then
+              export TAG_BASE=$CIRCLE_TAG
+              if echo "$CIRCLE_TAG" | grep -Eq '.+-custom$' ; then
+                export TAG_BASE=`echo "$CIRCLE_TAG" | sed -e 's/-custom$//g'`
+              fi
+
               docker login -u $DOCKER_USER -p $DOCKER_PASS
 
               echo "Build official Docker image"
               cp ~/repo/.docker/Dockerfile .
-              docker build -t rocketchat/rocket.chat:$CIRCLE_TAG .
-              docker push rocketchat/rocket.chat:$CIRCLE_TAG
+              docker build -t lltcggie/rocket.chat:$TAG_BASE .
+              docker push lltcggie/rocket.chat:$TAG_BASE
 
               echo "Build preview Docker image"
               cp ~/repo/.docker-mongo/Dockerfile .
               cp ~/repo/.docker-mongo/entrypoint.sh .
-              docker build -t rocketchat/rocket.chat.preview:$CIRCLE_TAG .
-              docker push rocketchat/rocket.chat.preview:$CIRCLE_TAG
+              docker build -t lltcggie/rocket.chat.preview:$TAG_BASE .
+              docker push lltcggie/rocket.chat.preview:$TAG_BASE
 
-              if echo "$CIRCLE_TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' ; then
-                docker tag rocketchat/rocket.chat:$CIRCLE_TAG rocketchat/rocket.chat:latest
-                docker push rocketchat/rocket.chat:latest
+              if echo "$CIRCLE_TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-custom$' ; then
+                docker tag lltcggie/rocket.chat:$TAG_BASE lltcggie/rocket.chat:latest
+                docker push lltcggie/rocket.chat:latest
 
-                docker tag rocketchat/rocket.chat.preview:$CIRCLE_TAG rocketchat/rocket.chat.preview:latest
-                docker push rocketchat/rocket.chat.preview:latest
-              elif echo "$CIRCLE_TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$' ; then
-                docker tag rocketchat/rocket.chat:$CIRCLE_TAG rocketchat/rocket.chat:release-candidate
-                docker push rocketchat/rocket.chat:release-candidate
+                docker tag lltcggie/rocket.chat.preview:$TAG_BASE lltcggie/rocket.chat.preview:latest
+                docker push lltcggie/rocket.chat.preview:latest
+              elif echo "$CIRCLE_TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+-custom$' ; then
+                docker tag lltcggie/rocket.chat:$TAG_BASE lltcggie/rocket.chat:release-candidate
+                docker push lltcggie/rocket.chat:release-candidate
 
-                docker tag rocketchat/rocket.chat.preview:$CIRCLE_TAG rocketchat/rocket.chat.preview:release-candidate
-                docker push rocketchat/rocket.chat.preview:release-candidate
+                docker tag lltcggie/rocket.chat.preview:$TAG_BASE lltcggie/rocket.chat.preview:release-candidate
+                docker push lltcggie/rocket.chat.preview:release-candidate
               fi
 
               exit 0
@@ -316,14 +325,14 @@ jobs:
 
               echo "Build official Docker image"
               cp ~/repo/.docker/Dockerfile .
-              docker build -t rocketchat/rocket.chat:develop .
-              docker push rocketchat/rocket.chat:develop
+              docker build -t lltcggie/rocket.chat:develop .
+              docker push lltcggie/rocket.chat:develop
 
               echo "Build preview Docker image"
               cp ~/repo/.docker-mongo/Dockerfile .
               cp ~/repo/.docker-mongo/entrypoint.sh .
-              docker build -t rocketchat/rocket.chat.preview:develop .
-              docker push rocketchat/rocket.chat.preview:develop
+              docker build -t lltcggie/rocket.chat.preview:develop .
+              docker push lltcggie/rocket.chat.preview:develop
 
               exit 0
             fi;
@@ -358,14 +367,14 @@ jobs:
 
             echo "Build official Docker image"
             cp ~/repo/.docker/Dockerfile .
-            docker build -t rocketchat/rocket.chat:pr-$CIRCLE_PR_NUMBER .
-            docker push rocketchat/rocket.chat:pr-$CIRCLE_PR_NUMBER
+            docker build -t lltcggie/rocket.chat:pr-$CIRCLE_PR_NUMBER .
+            docker push lltcggie/rocket.chat:pr-$CIRCLE_PR_NUMBER
 
             echo "Build preview Docker image"
             cp ~/repo/.docker-mongo/Dockerfile .
             cp ~/repo/.docker-mongo/entrypoint.sh .
-            docker build -t rocketchat/rocket.chat.preview:pr-$CIRCLE_PR_NUMBER .
-            docker push rocketchat/rocket.chat.preview:pr-$CIRCLE_PR_NUMBER
+            docker build -t lltcggie/rocket.chat.preview:pr-$CIRCLE_PR_NUMBER .
+            docker push lltcggie/rocket.chat.preview:pr-$CIRCLE_PR_NUMBER
 
 workflows:
   version: 2
@@ -373,37 +382,43 @@ workflows:
     jobs:
       - build:
           filters:
+            branches:
+              ignore: /.*/
             tags:
-              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-custom$/
       - test-with-oplog:
           requires:
             - build
           filters:
+            branches:
+              ignore: /.*/
             tags:
-              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-custom$/
       - test-without-oplog:
           requires:
             - build
           filters:
+            branches:
+              ignore: /.*/
             tags:
-              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-custom$/
       - deploy:
           requires:
             - test-with-oplog
             - test-without-oplog
           filters:
             branches:
-              only: develop
+              ignore: /.*/
             tags:
-              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-custom$/
       - image-build:
           requires:
             - deploy
           filters:
             branches:
-              only: develop
+              ignore: /.*/
             tags:
-              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$/
+              only: /^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?-custom$/
       - hold:
           type: approval
           requires:
