@@ -239,7 +239,7 @@ jobs:
 
             #aws s3 cp $ROCKET_DEPLOY_DIR/ s3://download.rocket.chat/build/ --recursive
             if [[ $CIRCLE_TAG ]]; then
-              ghr -t $GITHUB_TOKEN -u $CIRCLE_PROJECT_USERNAME -r $CIRCLE_PROJECT_REPONAME --replace $CIRCLE_TAG /tmp/build/Rocket.Chat.tar.gz;
+              ghr -t $GITHUB_TOKEN -u $CIRCLE_PROJECT_USERNAME -r $CIRCLE_PROJECT_REPONAME -prerelease --replace $CIRCLE_TAG /tmp/build/Rocket.Chat.tar.gz;
             fi
 
             #bash .circleci/update-releases.sh
