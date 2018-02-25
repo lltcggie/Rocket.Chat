@@ -348,6 +348,8 @@
   "API_Enable_Personal_Access_Tokens_Description": "REST APIで使用するためのパーソナルアクセストークンを有効にする",
   "API_Enable_Shields": "シールドを有効にする",
   "API_Enable_Shields_Description": "`/api/v1/shield.svg` でシールドを有効にする",
+  "API_EmbedParameter": "使用するパラメータ",
+  "API_EmbedParameter_Description": "プレビューするために使用するパラメータをJSON形式で指定します。例えば<br/>[ { \"URL\" : \"https://www.google.co.jp/\", \"Query\" : { \"q\": \"s\" }, \"Header\" : { \"Cookie\": \"name1=val1; name2=val2\", \"test\": \"val\" } } ]<br/>URLは前方一致。QueryはURLクエリパラメータ。Headerは追加するヘッダー。該当するURLが複数ある場合は、各要素は新しい要素で上書きされます",
   "API_GitHub_Enterprise_URL": "サーバー URL",
   "API_GitHub_Enterprise_URL_Description": "例: http://domain.com (末尾のスラッシュを除く)",
   "API_Gitlab_URL": "GitLab URL",
