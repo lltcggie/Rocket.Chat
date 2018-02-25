@@ -52,6 +52,58 @@ const toUtf8 = function(contentType, body) {
 	return iconv.decode(body, getCharset(contentType, body));
 };
 
+const addQueryTo = (href, query) => {
+	const urlObject = URL.parse(href, true);
+
+	urlObject.search = undefined;
+	Object.assign(urlObject.query, query);
+
+	return URL.format(urlObject);
+};
+
+const getSendHeaders = function(url) {
+	const addSendQuerys = {
+	};
+	const sendHeaders = {
+		'User-Agent': RocketChat.settings.get('API_Embed_UserAgent'),
+	};
+
+	const embedParameter = url && RocketChat.settings.get('API_EmbedParameter');
+	try {
+		if (/\S/.test(embedParameter)) {
+			// embedParameter is not empty or whitespace only
+			const embedParameterJSON = JSON.parse(embedParameter);
+			for (let i = 0; i < embedParameterJSON.length; i++) {
+				const headerElm = embedParameterJSON[i];
+				if (!url.indexOf(headerElm.URL)) {
+					if ('Query' in headerElm) {
+						for (const key in headerElm.Query) {
+							if (headerElm.Query.hasOwnProperty(key)) {
+								addSendQuerys[key] = headerElm.Query[key];
+							}
+						}
+					}
+					if ('Header' in headerElm) {
+						for (const key in headerElm.Header) {
+							if (headerElm.Header.hasOwnProperty(key)) {
+								sendHeaders[key] = headerElm.Header[key];
+							}
+						}
+					}
+				}
+			}
+		}
+	} catch (e) {
+		// parsing JSON faild
+		console.log('Error while parsing JSON value of "API_EmbedParameter": ', e);
+	}
+	let retUrl = url;
+	if (Object.keys(addSendQuerys).length > 0) {
+		retUrl = addQueryTo(url, addSendQuerys);
+	}
+	return [retUrl, sendHeaders];
+};
+
 const getUrlContent = function(urlObj, redirectCount = 5, callback) {
 
 	if (_.isString(urlObj)) {
@@ -76,15 +128,13 @@ const getUrlContent = function(urlObj, redirectCount = 5, callback) {
 	if (data.attachments != null) {
 		return callback(null, data);
 	}
-	const url = URL.format(data.urlObj);
+	const [url, sendHeaders] = getSendHeaders(URL.format(data.urlObj));
 	const opts = {
 		url,
 		strictSSL: !RocketChat.settings.get('Allow_Invalid_SelfSigned_Certs'),
 		gzip: true,
 		maxRedirects: redirectCount,
-		headers: {
-			'User-Agent': RocketChat.settings.get('API_Embed_UserAgent'),
-		},
+		headers: sendHeaders,
 	};
 	let headers = null;
 	let statusCode = null;
