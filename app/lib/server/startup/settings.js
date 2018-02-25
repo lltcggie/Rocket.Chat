@@ -1090,6 +1090,11 @@ settings.addGroup('Message', function() {
 	this.add('API_EmbedSafePorts', '80, 443', {
 		type: 'string',
 	});
+	this.add('API_EmbedParameter', '', {
+		type: 'string',
+		multiline: true,
+		i18nDescription: 'API_EmbedParameter_Description',
+	});
 	this.add('Message_TimeFormat', 'LT', {
 		type: 'string',
 		public: true,
