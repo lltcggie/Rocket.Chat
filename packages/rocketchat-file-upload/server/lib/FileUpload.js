@@ -4,7 +4,6 @@ import fs from 'fs';
 import stream from 'stream';
 import mime from 'mime-type/with-db';
 import Future from 'fibers/future';
-import sharp from 'sharp';
 import { Cookies } from 'meteor/ostrio:cookies';
 
 const cookie = new Cookies();
@@ -31,6 +30,7 @@ Object.assign(FileUpload, {
 			getPath(file) {
 				return `${ RocketChat.settings.get('uniqueID') }/uploads/${ file.rid }/${ file.userId }/${ file._id }`;
 			},
+			// transformWrite: FileUpload.uploadsTransformWrite
 			onValidate: FileUpload.uploadsOnValidate,
 			onRead(fileId, file, req, res) {
 				if (!FileUpload.requestCanAccessFiles(req)) {
@@ -50,6 +50,7 @@ Object.assign(FileUpload, {
 			// filter: new UploadFS.Filter({
 			// 	onCheck: FileUpload.validateFileUpload
 			// }),
+			// transformWrite: FileUpload.avatarTransformWrite,
 			getPath(file) {
 				return `${ RocketChat.settings.get('uniqueID') }/avatars/${ file.userId }`;
 			},
@@ -77,48 +78,34 @@ Object.assign(FileUpload, {
 		};
 	},
 
+	avatarTransformWrite(readStream, writeStream/*, fileId, file*/) {
+		if (RocketChatFile.enabled === false || RocketChat.settings.get('Accounts_AvatarResize') !== true) {
+			return readStream.pipe(writeStream);
+		}
+		const height = RocketChat.settings.get('Accounts_AvatarSize');
+		const width = height;
+		return (file => RocketChat.Info.GraphicsMagick.enabled ? file: file.alpha('remove'))(RocketChatFile.gm(readStream).background('#FFFFFF')).resize(width, `${ height }^`).gravity('Center').crop(width, height).extent(width, height).stream('jpeg').pipe(writeStream);
+	},
+
 	avatarsOnValidate(file) {
-		if (RocketChat.settings.get('Accounts_AvatarResize') !== true) {
+		if (RocketChatFile.enabled === false || RocketChat.settings.get('Accounts_AvatarResize') !== true) {
 			return;
 		}
 
 		const tempFilePath = UploadFS.getTempFilePath(file._id);
 
 		const height = RocketChat.settings.get('Accounts_AvatarSize');
+		const width = height;
 		const future = new Future();
 
-		const s = sharp(tempFilePath);
-		s.rotate();
-		// Get metadata to resize the image the first time to keep "inside" the dimensions
-		// then resize again to create the canvas around
-
-		s.metadata(Meteor.bindEnvironment((err, metadata) => {
-			if (!metadata) {
-				metadata = {};
+		(file => RocketChat.Info.GraphicsMagick.enabled ? file: file.alpha('remove'))(RocketChatFile.gm(tempFilePath).background('#FFFFFF')).resize(width, `${ height }^`).gravity('Center').crop(width, height).extent(width, height).setFormat('jpeg').write(tempFilePath, Meteor.bindEnvironment(err => {
+			if (err != null) {
+				console.error(err);
 			}
-
-			s.toFormat(sharp.format.jpeg)
-				.resize(Math.min(height || 0, metadata.width || Infinity), Math.min(height || 0, metadata.height || Infinity))
-				.pipe(sharp()
-					.resize(height, height)
-					.background('#FFFFFF')
-					.embed()
-				)
-				// Use buffer to get the result in memory then replace the existing file
-				// There is no option to override a file using this library
-				.toBuffer()
-				.then(Meteor.bindEnvironment(outputBuffer => {
-					fs.writeFile(tempFilePath, outputBuffer, Meteor.bindEnvironment(err => {
-						if (err != null) {
-							console.error(err);
-						}
-						const size = fs.lstatSync(tempFilePath).size;
-						this.getCollection().direct.update({_id: file._id}, {$set: {size}});
-						future.return();
-					}));
-				}));
+			const size = fs.lstatSync(tempFilePath).size;
+			this.getCollection().direct.update({_id: file._id}, {$set: {size}});
+			future.return();
 		}));
-
 		return future.wait();
 	},
 
@@ -127,18 +114,72 @@ Object.assign(FileUpload, {
 		file = FileUpload.addExtensionTo(file);
 		const image = FileUpload.getStore('Uploads')._store.getReadStream(file._id, file);
 
-		const transformer = sharp()
+		// const transformer = sharp()
+		// 	.resize(32, 32)
+		// 	.max()
+		// 	.jpeg()
+		// 	.blur();
+		// const result = transformer.toBuffer().then((out) => out.toString('base64'));
+		// image.pipe(transformer);
+
+		const transformer = RocketChatFile.gm(image)
 			.resize(32, 32)
-			.max()
-			.jpeg()
-			.blur();
-		const result = transformer.toBuffer().then((out) => out.toString('base64'));
-		image.pipe(transformer);
+			.setFormat('jpeg');
+
+		const buffer = new Promise((resolve, reject) => {
+			transformer.stream((err, stdout, stderr) => {
+				if (err) { return reject(err) }
+				const chunks = []
+				stdout.on('data', (chunk) => { chunks.push(chunk) })
+				// these are 'once' because they can and do fire multiple times for multiple errors,
+				// but this is a promise so you'll have to deal with them one at a time
+				stdout.once('end', () => { resolve(Buffer.concat(chunks)) })
+				stderr.once('data', (data) => { reject(String(data)) })
+			})
+		})
+
+		const result = buffer.then((out) => out.toString('base64'));
+
+		// return (file => RocketChat.Info.GraphicsMagick.enabled ? file: file)(RocketChatFile.gm(image).background('#FFFFFF'))
+		// 	.resize(32, 32)
+		// 	.gravity('Center')
+		// 	.crop(width, height)
+		// 	.extent(width, height)
+		// 	.setFormat('jpeg')
+		// 	.toString('base64');
+
 		return result;
 	},
 
+	uploadsTransformWrite(readStream, writeStream, fileId, file) {
+		if (RocketChatFile.enabled === false || !/^image\/.+/.test(file.type)) {
+			return readStream.pipe(writeStream);
+		}
+
+		let stream = undefined;
+
+		const identify = function(err, data) {
+			if (err) {
+				return stream.pipe(writeStream);
+			}
+
+			file.identify = {
+				format: data.format,
+				size: data.size
+			};
+
+			if (data.Orientation && !['', 'Unknown', 'Undefined'].includes(data.Orientation)) {
+				RocketChatFile.gm(stream).autoOrient().stream().pipe(writeStream);
+			} else {
+				stream.pipe(writeStream);
+			}
+		};
+
+		stream = RocketChatFile.gm(readStream).identify(identify).stream();
+	},
+
 	uploadsOnValidate(file) {
-		if (!/^image\/((x-windows-)?bmp|p?jpeg|png)$/.test(file.type)) {
+		if (RocketChatFile.enabled === false || !/^image\/((x-windows-)?bmp|p?jpeg|png)$/.test(file.type)) {
 			return;
 		}
 
@@ -146,45 +187,33 @@ Object.assign(FileUpload, {
 
 		const fut = new Future();
 
-		const s = sharp(tmpFile);
-		s.metadata(Meteor.bindEnvironment((err, metadata) => {
+		const identify = Meteor.bindEnvironment((err, data) => {
 			if (err != null) {
 				console.error(err);
 				return fut.return();
 			}
 
-			const identify = {
-				format: metadata.format,
-				size: {
-					width: metadata.width,
-					height: metadata.height
-				}
+			file.identify = {
+				format: data.format,
+				size: data.size
 			};
 
-			if (metadata.orientation == null) {
+			if ([null, undefined, '', 'Unknown', 'Undefined'].includes(data.Orientation)) {
 				return fut.return();
 			}
 
-			s.rotate()
-				.toFile(`${ tmpFile }.tmp`)
-				.then(Meteor.bindEnvironment(() => {
-					fs.unlink(tmpFile, Meteor.bindEnvironment(() => {
-						fs.rename(`${ tmpFile }.tmp`, tmpFile, Meteor.bindEnvironment(() => {
-							const size = fs.lstatSync(tmpFile).size;
-							this.getCollection().direct.update({_id: file._id}, {
-								$set: {
-									size,
-									identify
-								}
-							});
-							fut.return();
-						}));
-					}));
-				})).catch((err) => {
+			RocketChatFile.gm(tmpFile).autoOrient().write(tmpFile, Meteor.bindEnvironment((err) => {
+				if (err != null) {
 					console.error(err);
-					fut.return();
-				});
-		}));
+				}
+
+				const size = fs.lstatSync(tmpFile).size;
+				this.getCollection().direct.update({_id: file._id}, {$set: {size}});
+				fut.return();
+			}));
+		});
+
+		RocketChatFile.gm(tmpFile).identify(identify);
 
 		return fut.wait();
 	},
@@ -205,19 +234,15 @@ Object.assign(FileUpload, {
 			return true;
 		}
 
-		let { rc_uid, rc_token, rc_rid, rc_room_type } = query;
+		let { rc_uid, rc_token } = query;
 
 		if (!rc_uid && headers.cookie) {
 			rc_uid = cookie.get('rc_uid', headers.cookie);
 			rc_token = cookie.get('rc_token', headers.cookie);
-			rc_rid = cookie.get('rc_rid', headers.cookie);
-			rc_room_type = cookie.get('rc_room_type', headers.cookie);
 		}
-
 		const isAuthorizedByCookies = rc_uid && rc_token && RocketChat.models.Users.findOneByIdAndLoginToken(rc_uid, rc_token);
 		const isAuthorizedByHeaders = headers['x-user-id'] && headers['x-auth-token'] && RocketChat.models.Users.findOneByIdAndLoginToken(headers['x-user-id'], headers['x-auth-token']);
-		const isAuthorizedByRoom = rc_room_type && RocketChat.roomTypes.getConfig(rc_room_type).canAccessUploadedFile({ rc_uid, rc_rid, rc_token });
-		return isAuthorizedByCookies || isAuthorizedByHeaders || isAuthorizedByRoom;
+		return isAuthorizedByCookies || isAuthorizedByHeaders;
 	},
 	addExtensionTo(file) {
 		if (mime.lookup(file.name) === file.type) {
@@ -269,6 +294,7 @@ Object.assign(FileUpload, {
 		return false;
 	}
 });
+
 
 export class FileUploadClass {
 	constructor({ name, model, store, get, insert, getStore, copy }) {
