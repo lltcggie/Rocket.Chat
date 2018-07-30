@@ -1,7 +1,7 @@
 import _ from 'underscore';
 
 Meteor.methods({
-	async 'sendFileMessage'(roomId, store, file, msgData = {}) {
+	'sendFileMessage'(roomId, store, file, msgData = {}) {
 		if (!Meteor.userId()) {
 			throw new Meteor.Error('error-invalid-user', 'Invalid user', { method: 'sendFileMessage' });
 		}
@@ -39,7 +39,6 @@ Meteor.methods({
 			if (file.identify && file.identify.size) {
 				attachment.image_dimensions = file.identify.size;
 			}
-			attachment.image_preview = await FileUpload.resizeImagePreview(file);
 		} else if (/^audio\/.+/.test(file.type)) {
 			attachment.audio_url = fileUrl;
 			attachment.audio_type = file.type;
