@@ -1,7 +1,7 @@
 import LivechatVisitors from '../models/LivechatVisitors';
 
 Meteor.methods({
-	async 'sendFileLivechatMessage'(roomId, visitorToken, file, msgData = {}) {
+	'sendFileLivechatMessage'(roomId, visitorToken, file, msgData = {}) {
 		const visitor = LivechatVisitors.getVisitorByToken(visitorToken);
 
 		if (!visitor) {
@@ -39,7 +39,6 @@ Meteor.methods({
 			if (file.identify && file.identify.size) {
 				attachment.image_dimensions = file.identify.size;
 			}
-			attachment.image_preview = await FileUpload.resizeImagePreview(file);
 		} else if (/^audio\/.+/.test(file.type)) {
 			attachment.audio_url = fileUrl;
 			attachment.audio_type = file.type;
