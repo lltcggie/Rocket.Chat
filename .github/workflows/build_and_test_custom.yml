@@ -1,13 +1,11 @@
-name: Build and Test
+name: Build and Test Custom
 
 on:
-  release:
-    types: [published]
-  pull_request:
-    branches: '**'
   push:
     branches:
-      - develop
+      - customize-develop
+    tags:
+      - "*-custom"
 
 env:
   CI: true
@@ -133,19 +131,11 @@ jobs:
     #     git checkout -- server/main.js client/main.js .meteor/packages
 
     - name: Reset Meteor
-      if: startsWith(github.ref, 'refs/tags/') == 'true' || github.ref == 'refs/heads/develop'
+      if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/customize-develop'
       run: |
         meteor reset
 
-    - name: Build Rocket.Chat From Pull Request
-      if: startsWith(github.ref, 'refs/pull/') == true
-      env:
-        METEOR_PROFILE: 1000
-      run: |
-        meteor build --server-only --directory --debug /tmp/build-test
-
     - name: Build Rocket.Chat
-      if: startsWith(github.ref, 'refs/pull/') != true
       run: |
         meteor build --server-only --directory /tmp/build-test
 
@@ -244,130 +234,10 @@ jobs:
         Xvfb -screen 0 1024x768x24 :99 &
         for i in $(seq 1 5); do (docker exec mongo mongo rocketchat --eval 'db.dropDatabase()') && npm run testci && s=0 && break || s=$? && sleep 1; done; (exit $s)
 
-#   notification:
-#     runs-on: ubuntu-latest
-#     needs: test
-
-#     steps:
-#     - name: Rocket.Chat Notification
-#       uses: RocketChat/Rocket.Chat.GitHub.Action.Notification@1.1.1
-#       with:
-#         type: ${{ job.status }}
-#         job_name: '**Build and Test**'
-#         url: ${{ secrets.ROCKETCHAT_WEBHOOK }}
-#         commit: true
-#         token: ${{ secrets.GITHUB_TOKEN }}
-
-  build-image-pr:
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.head.repo.full_name == github.repository
-
-    steps:
-    - uses: actions/checkout@v2
-
-    - name: Free disk space
-      run: |
-        sudo swapoff -a
-        sudo rm -f /swapfile
-        sudo apt clean
-        docker rmi $(docker image ls -aq)
-        df -h
-
-    - name: Cache node modules
-      id: cache-nodemodules
-      uses: actions/cache@v1
-      with:
-        path: node_modules
-        key: ${{ runner.OS }}-node_modules-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('.github/workflows/build_and_test.yml') }}
-
-    - name: Cache meteor local
-      uses: actions/cache@v1
-      with:
-        path: ./.meteor/local
-        key: ${{ runner.OS }}-meteor_cache-${{ hashFiles('.meteor/versions') }}-${{ hashFiles('.github/workflows/build_and_test.yml') }}
-
-    - name: Cache meteor
-      uses: actions/cache@v1
-      with:
-        path: ~/.meteor
-        key: ${{ runner.OS }}-meteor-${{ hashFiles('.meteor/release') }}-${{ hashFiles('.github/workflows/build_and_test.yml') }}
-
-    - name: Use Node.js 12.18.4
-      uses: actions/setup-node@v1
-      with:
-        node-version: "12.18.4"
-
-    - name: Install Meteor
-      run: |
-        # Restore bin from cache
-        set +e
-        METEOR_SYMLINK_TARGET=$(readlink ~/.meteor/meteor)
-        METEOR_TOOL_DIRECTORY=$(dirname "$METEOR_SYMLINK_TARGET")
-        set -e
-        LAUNCHER=$HOME/.meteor/$METEOR_TOOL_DIRECTORY/scripts/admin/launch-meteor
-        if [ -e $LAUNCHER ]
-        then
-          echo "Cached Meteor bin found, restoring it"
-          sudo cp "$LAUNCHER" "/usr/local/bin/meteor"
-        else
-          echo "No cached Meteor bin found."
-        fi
-
-        # only install meteor if bin isn't found
-        command -v meteor >/dev/null 2>&1 || curl https://install.meteor.com | sed s/--progress-bar/-sL/g | /bin/sh
-
-    - name: Versions
-      run: |
-        npm --versions
-        node -v
-        meteor --version
-        meteor npm --versions
-        meteor node -v
-        git version
-        echo $GITHUB_REF
-
-    - name: npm install
-      if: steps.cache-nodemodules.outputs.cache-hit != 'true'
-      run: |
-        meteor npm install
-
-    # To reduce memory need during actual build, build the packages solely first
-    # - name: Build a Meteor cache
-    #   run: |
-    #     # to do this we can clear the main files and it build the rest
-    #     echo "" > server/main.js
-    #     echo "" > client/main.js
-    #     sed -i.backup 's/rocketchat:livechat/#rocketchat:livechat/' .meteor/packages
-    #     meteor build --server-only --debug --directory /tmp/build-temp
-    #     git checkout -- server/main.js client/main.js .meteor/packages
-
-    - name: Build Rocket.Chat
-      run: |
-        meteor build --server-only --directory /tmp/build-pr
-
-    - name: Build Docker image for PRs
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        VERSION: pr-${{ github.event.number }}
-      run: |
-        cd /tmp/build-pr
-
-        docker login docker.pkg.github.com -u "${GITHUB_ACTOR}" -p "${GITHUB_TOKEN}"
-
-        cp $GITHUB_WORKSPACE/.docker/Dockerfile .
-
-        export LOWERCASE_REPOSITORY=$(echo "$GITHUB_REPOSITORY" | tr "[:upper:]" "[:lower:]")
-
-        export IMAGE_NAME="docker.pkg.github.com/${LOWERCASE_REPOSITORY}/rocket.chat:${VERSION}"
-
-        echo "Build official Docker image ${IMAGE_NAME}"
-
-        docker build -t $IMAGE_NAME .
-        docker push $IMAGE_NAME
 
   deploy:
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' || github.ref == 'refs/heads/develop'
+    if: startsWith(github.ref, 'refs/tags/') && endsWith(github.ref, '-custom') || github.ref == 'refs/heads/customize-develop'
     needs: test
 
     steps:
@@ -379,38 +249,53 @@ jobs:
         name: build
         path: /tmp/build
 
-    - name: Publish assets
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        GPG_PASSWORD: ${{ secrets.GPG_PASSWORD }}
-        REDHAT_REGISTRY_PID: ${{ secrets.REDHAT_REGISTRY_PID }}
-        REDHAT_REGISTRY_KEY: ${{ secrets.REDHAT_REGISTRY_KEY }}
-        UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+    - name: Prepare publish assets
       run: |
-        if [[ '${{ github.event_name }}' = 'release' ]]; then
-          export CIRCLE_TAG="${GITHUB_REF#*tags/}"
-          export CIRCLE_BRANCH=""
-        else
-          export CIRCLE_TAG=""
-          export CIRCLE_BRANCH="${GITHUB_REF#*heads/}"
-        fi;
+        export CIRCLE_TAG="${GITHUB_REF#*tags/}"
 
+        export CIRCLE_TAG=${CIRCLE_TAG:=}
         export CIRCLE_SHA1=$GITHUB_SHA
         export CIRCLE_BUILD_NUM=$GITHUB_SHA
 
-        aws s3 cp s3://rocketchat/sign.key.gpg .circleci/sign.key.gpg
+        if [[ $CIRCLE_TAG =~ ^refs/.*$ ]]; then
+          export CIRCLE_TAG=
+        fi
 
         source .circleci/setartname.sh
         source .circleci/setdeploydir.sh
-        bash .circleci/setupsig.sh
         bash .circleci/namefiles.sh
 
-        aws s3 cp $ROCKET_DEPLOY_DIR/ s3://download.rocket.chat/build/ --recursive
+        # if [ $CIRCLE_TAG ] then
+        #   PRE_RELEASE=
+        #   if [[ "$CIRCLE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+-custom$ ]]; then
+        #     PRE_RELEASE=-prerelease
+        #   fi
+        # fi
 
-        bash .circleci/update-releases.sh
-        # bash .circleci/snap.sh
-        bash .circleci/redhat-registry.sh
+        # echo "::set-env name=CIRCLE_TAG::$CIRCLE_TAG"
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1.0.0
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        GITHUB_TOKEN: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: ${{ github.ref }}
+        prerelease: false
+
+    - name: Upload Release Asset
+      id: upload-release-asset
+      uses: actions/upload-release-asset@v1.0.1
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        GITHUB_TOKEN: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: /tmp/build/Rocket.Chat.tar.gz
+        asset_name: Rocket.Chat.tar.gz
+        asset_content_type: application/gzip
 
   image-build:
     runs-on: ubuntu-latest
@@ -421,7 +306,7 @@ jobs:
         release: ["official", "preview"]
 
     env:
-      IMAGE: "rocketchat/rocket.chat"
+      IMAGE: "lltcggie/rocket.chat"
 
     steps:
     - uses: actions/checkout@v2
@@ -443,6 +328,8 @@ jobs:
 
         export DOCKER_PATH="${GITHUB_WORKSPACE}/.docker"
         if [[ '${{ matrix.release }}' = 'preview' ]]; then
+          export IMAGE="${IMAGE}.preview"
+          echo "::set-env name=IMAGE::$IMAGE"
           export DOCKER_PATH="${DOCKER_PATH}-mongo"
         fi;
 
@@ -455,14 +342,14 @@ jobs:
         docker login -u $DOCKER_USER -p $DOCKER_PASS
 
     - name: Build Docker image for tag
-      if: github.event_name == 'release'
+      if: startsWith(github.ref, 'refs/tags/') && endsWith(github.ref, '-custom')
       run: |
         cd /tmp/build
         export CIRCLE_TAG="${GITHUB_REF#*tags/}"
 
-        if [[ '${{ matrix.release }}' = 'preview' ]]; then
-          export IMAGE="${IMAGE}.preview"
-        fi;
+        if echo "$CIRCLE_TAG" | grep -Eq '.+-custom$' ; then
+          export CIRCLE_TAG=`echo "$CIRCLE_TAG" | sed -e 's/-custom$//g'`
+        fi
 
         docker build -t ${IMAGE}:$CIRCLE_TAG .
         docker push ${IMAGE}:$CIRCLE_TAG
@@ -477,13 +364,8 @@ jobs:
         docker push ${IMAGE}:${RELEASE}
 
     - name: Build Docker image for develop
-      if: github.ref == 'refs/heads/develop'
+      if: github.ref == 'refs/heads/customize-develop'
       run: |
         cd /tmp/build
-
-        if [[ '${{ matrix.release }}' = 'preview' ]]; then
-          export IMAGE="${IMAGE}.preview"
-        fi;
-
         docker build -t ${IMAGE}:develop .
         docker push ${IMAGE}:develop
