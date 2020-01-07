@@ -1,13 +1,11 @@
-name: Build and Test
+name: Build and Test Custom
 
 on:
-  release:
-    types: [published]
-  pull_request:
-    branches: '**'
   push:
     branches:
-      - develop
+      - customize-develop
+    tags:
+      - "*-custom"
 
 env:
   CI: true
@@ -133,7 +131,7 @@ jobs:
     #     git checkout -- server/main.js client/main.js .meteor/packages
 
     - name: Reset Meteor
-      if: startsWith(github.ref, 'refs/tags/') == 'true' || github.ref == 'refs/heads/develop'
+      if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/customize-develop'
       run: |
         meteor reset
 
@@ -366,7 +364,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' || github.ref == 'refs/heads/develop'
+    if: startsWith(github.ref, 'refs/tags/') && endsWith(github.ref, '-custom') || github.ref == 'refs/heads/customize-develop'
     needs: test
 
     steps:
@@ -378,38 +376,44 @@ jobs:
         name: build
         path: /tmp/build
 
-    - name: Publish assets
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        GPG_PASSWORD: ${{ secrets.GPG_PASSWORD }}
-        REDHAT_REGISTRY_PID: ${{ secrets.REDHAT_REGISTRY_PID }}
-        REDHAT_REGISTRY_KEY: ${{ secrets.REDHAT_REGISTRY_KEY }}
-        UPDATE_TOKEN: ${{ secrets.UPDATE_TOKEN }}
+    - name: Prepare publish assets
       run: |
-        if [[ '${{ github.event_name }}' = 'release' ]]; then
-          export CIRCLE_TAG="${GITHUB_REF#*tags/}"
-          export CIRCLE_BRANCH=""
-        else
-          export CIRCLE_TAG=""
-          export CIRCLE_BRANCH="${GITHUB_REF#*heads/}"
-        fi;
+        export CIRCLE_TAG="${GITHUB_REF#*tags/}"
 
+        export CIRCLE_TAG=${CIRCLE_TAG:=}
         export CIRCLE_SHA1=$GITHUB_SHA
         export CIRCLE_BUILD_NUM=$GITHUB_SHA
 
-        aws s3 cp s3://rocketchat/sign.key.gpg .circleci/sign.key.gpg
+        if [[ $CIRCLE_TAG =~ ^refs/.*$ ]]; then
+          export CIRCLE_TAG=
+        fi
 
         source .circleci/setartname.sh
         source .circleci/setdeploydir.sh
-        bash .circleci/setupsig.sh
         bash .circleci/namefiles.sh
 
-        aws s3 cp $ROCKET_DEPLOY_DIR/ s3://download.rocket.chat/build/ --recursive
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1.0.0
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        GITHUB_TOKEN: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: ${{ github.ref }}
+        prerelease: false
 
-        bash .circleci/update-releases.sh
-        # bash .circleci/snap.sh
-        bash .circleci/redhat-registry.sh
+    - name: Upload Release Asset
+      id: upload-release-asset
+      uses: actions/upload-release-asset@v1.0.1
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        GITHUB_TOKEN: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: /tmp/build/Rocket.Chat.tar.gz
+        asset_name: Rocket.Chat.tar.gz
+        asset_content_type: application/gzip
 
   image-build:
     runs-on: ubuntu-latest
@@ -420,7 +424,7 @@ jobs:
         release: ["official", "preview"]
 
     env:
-      IMAGE: "rocketchat/rocket.chat"
+      IMAGE: "lltcggie/rocket.chat"
 
     steps:
     - uses: actions/checkout@v2
@@ -455,7 +459,7 @@ jobs:
         fi;
 
     - name: Build Docker image for tag
-      if: github.event_name == 'release'
+      if: startsWith(github.ref, 'refs/tags/') && endsWith(github.ref, '-custom')
       run: |
         cd /tmp/build
         CIRCLE_TAG="${GITHUB_REF#*tags/}"
@@ -463,6 +467,10 @@ jobs:
         if [[ '${{ matrix.release }}' = 'preview' ]]; then
           IMAGE="${IMAGE}.preview"
         fi;
+
+        if echo "$CIRCLE_TAG" | grep -Eq '.+-custom$' ; then
+          export CIRCLE_TAG=`echo "$CIRCLE_TAG" | sed -e 's/-custom$//g'`
+        fi
 
         docker build -t ${IMAGE}:$CIRCLE_TAG .
         docker push ${IMAGE}:$CIRCLE_TAG
@@ -477,7 +485,7 @@ jobs:
         docker push ${IMAGE}:${RELEASE}
 
     - name: Build Docker image for develop
-      if: github.ref == 'refs/heads/develop'
+      if: github.ref == 'refs/heads/customize-develop'
       run: |
         cd /tmp/build
 
@@ -487,44 +495,3 @@ jobs:
 
         docker build -t ${IMAGE}:develop .
         docker push ${IMAGE}:develop
-
-  services-image-build:
-    runs-on: ubuntu-latest
-    needs: deploy
-
-    strategy:
-      matrix:
-        service: ["account", "authorization", "ddp-streamer", "presence", "stream-hub"]
-
-    steps:
-    - uses: actions/checkout@v2
-
-    - name: Use Node.js 12.18.4
-      uses: actions/setup-node@v1
-      with:
-        node-version: "12.18.4"
-
-    - name: Login to DockerHub
-      uses: docker/login-action@v1
-      with:
-        username: ${{ secrets.DOCKER_USER }}
-        password: ${{ secrets.DOCKER_PASS }}
-
-    - name: Build Docker images
-      run: |
-        # defines image tag
-        if [[ $GITHUB_REF == refs/tags/* ]]; then IMAGE_TAG="${GITHUB_REF#refs/tags/}"; else IMAGE_TAG="${GITHUB_REF#refs/heads/}"; fi
-
-        # first install repo dependencies
-        npm i
-
-        # then micro services dependencies
-        cd ./ee/server/services
-        npm i
-        npm run build
-
-        echo "Building Docker image for service: ${{ matrix.service }}:${IMAGE_TAG}"
-
-        docker build --build-arg SERVICE=${{ matrix.service }} -t rocketchat/${{ matrix.service }}-service:${IMAGE_TAG} .
-
-        docker push rocketchat/${{ matrix.service }}-service
