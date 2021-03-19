@@ -3,6 +3,8 @@ import React, { FC, useMemo } from 'react';
 import marked from 'marked';
 import dompurify from 'dompurify';
 
+import { escapeHTML } from '../../lib/escapeHTML';
+
 type MarkdownTextParams = {
 	content: string;
 	variant: 'inline' | 'inlineWithoutBreaks' | 'document';
@@ -28,18 +30,30 @@ const listItemMarked = (text: string): string => {
 	const cleanText = text.replace(/<p.*?>|<\/p>/ig, '');
 	return `<li>${ cleanText }</li>`;
 };
+const codeMarked = (code: string, lang: string | undefined, escaped: boolean): string =>
+	(!lang
+		? `<code class="code-colors hljs">${ escaped ? code : escapeHTML(code) }</code>`
+		: `<code class="code-colors hljs ${ escape(lang) }">${ escaped ? code : escapeHTML(code) }</code>`);
+const codespanMarked = (text: string): string =>
+	`<code class="code-colors inline">${ text }</code>`;
 
 documentRenderer.link = linkMarked;
 documentRenderer.listitem = listItemMarked;
+documentRenderer.code = codeMarked;
+documentRenderer.codespan = codespanMarked;
 
 inlineRenderer.link = linkMarked;
 inlineRenderer.paragraph = paragraphMarked;
 inlineRenderer.listitem = listItemMarked;
+inlineRenderer.code = codeMarked;
+inlineRenderer.codespan = codespanMarked;
 
 inlineWithoutBreaks.link = linkMarked;
 inlineWithoutBreaks.paragraph = paragraphMarked;
 inlineWithoutBreaks.br = brMarked;
 inlineWithoutBreaks.listitem = listItemMarked;
+inlineWithoutBreaks.code = codeMarked;
+inlineWithoutBreaks.codespan = codespanMarked;
 
 const defaultOptions = {
 	gfm: true,
@@ -86,7 +100,7 @@ const MarkdownText: FC<Partial<MarkdownTextParams>> = ({
 	}
 
 	const __html = useMemo(() => {
-		const html = content && typeof content === 'string' && marked(content, markedOptions);
+		const html = content && typeof content === 'string' && `<pre>${ marked(content, markedOptions).replace('<pre>', '').replace('</pre>', '') }</pre>`;
 		return preserveHtml ? html : html && sanitizer(html, { ADD_ATTR: ['target'] });
 	}, [content, preserveHtml, sanitizer, markedOptions]);
 
