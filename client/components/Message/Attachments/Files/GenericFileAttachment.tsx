@@ -1,9 +1,10 @@
 import React, { FC } from 'react';
 
 import { Attachment, AttachmentPropsBase } from '../Attachment';
-import MarkdownText from '../../../MarkdownText';
+import RawText from '../../../RawText';
 import { FileProp } from '..';
 import { useMediaUrl } from '../context/AttachmentContext';
+import { escapeHTML } from '../../../../../lib/escapeHTML';
 
 export type GenericFileAttachmentProps = {
 	file: FileProp;
@@ -20,19 +21,16 @@ export const GenericFileAttachment: FC<GenericFileAttachmentProps> = ({
 	// const [collapsed, collapse] = useCollapse(collapsedDefault);
 	const getURL = useMediaUrl();
 	return <Attachment>
-		{ description && <MarkdownText content={description} /> }
-		<Attachment.Row>
-			{ hasDownload && link ? <Attachment.TitleLink link={getURL(link)} title={title} /> : <Attachment.Title>{title}</Attachment.Title> }
-			{file && file.size && <Attachment.Size size={file.size}/>}
-			{/* {collapse} */}
-			{hasDownload && link && <Attachment.Download title={title} href={getURL(link)}/>}
-		</Attachment.Row>
-		{/* { !collapsed && <Attachment.Content>
+		<Attachment.Content>
+			{ description && <RawText>{escapeHTML(description)}</RawText> }
 			<Attachment.Details>
-				{hasDownload && link && <Attachment.Download href={link}/>}
-				<Attachment.Row><Attachment.Title { ...hasDownload && link && { is: 'a', href: link } } >{name}</Attachment.Title></Attachment.Row>
-				<Attachment.Row>{size && <Attachment.Size size={size}/>}<Attachment.Title>{format && size && ' | '}{format}</Attachment.Title></Attachment.Row>
+				<Attachment.Row>
+					{ hasDownload && link ? <Attachment.TitleLink link={getURL(link)} title={title} /> : <Attachment.Title>{title}</Attachment.Title> }
+					{file && file.size && <Attachment.Size size={file.size}/>}
+					{/* {collapse} */}
+					{hasDownload && link && <Attachment.Download title={title} href={getURL(link)}/>}
+				</Attachment.Row>
 			</Attachment.Details>
-		</Attachment.Content> } */}
+		</Attachment.Content>
 	</Attachment>;
 };
