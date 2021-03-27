@@ -4,11 +4,10 @@ import QueryString from 'querystring';
 import { Meteor } from 'meteor/meteor';
 import _ from 'underscore';
 
-import { Messages, Rooms, Users } from '../../models/server';
+import { Messages } from '../../models/server';
 import { settings } from '../../settings/server';
 import { callbacks } from '../../callbacks/server';
 import { getUserAvatarURL } from '../../utils/lib/getUserAvatarURL';
-import { canAccessRoom } from '../../authorization/server/functions/canAccessRoom';
 
 const recursiveRemove = (message, deep = 1) => {
 	if (message) {
@@ -26,8 +25,6 @@ callbacks.add('beforeSaveMessage', (msg) => {
 	if (!msg || (!msg.urls || !msg.urls.length)) {
 		return msg;
 	}
-
-	const currentUser = Users.findOneById(msg.u._id);
 
 	msg.urls.forEach((item) => {
 		// if the URL is not internal, skip
@@ -50,14 +47,6 @@ callbacks.add('beforeSaveMessage', (msg) => {
 
 		const jumpToMessage = recursiveRemove(Messages.findOneById(msgId));
 		if (!jumpToMessage) {
-			return;
-		}
-
-		// validates if user can see the message
-		// user has to belong to the room the message was first wrote in
-		const room = Rooms.findOneById(jumpToMessage.rid);
-		const canAccessRoomForUser = canAccessRoom(room, currentUser);
-		if (!canAccessRoomForUser) {
 			return;
 		}
 
